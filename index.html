@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>王者荣耀战术板</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 顶部标题栏 -->
+  <header id="header">
+    <h1>👑 王者荣耀战术板</h1>
+    <button id="btn-menu" title="菜单">☰</button>
+    <div id="header-info">
+      <span id="game-time-display">⏱ 00:00</span>
+      <span id="game-phase-display">—</span>
+    </div>
+  </header>
+
+  <!-- 主布局：三栏 -->
+  <div id="main-container">
+    <!-- 左侧面板 -->
+    <aside id="left-panel">
+      <!-- 抽屉拖拽手柄（移动端） -->
+      <div id="drawer-handle"></div>
+      <!-- 英雄面板 -->
+      <section id="hero-section">
+        <h3>🎮 英雄选择</h3>
+        <div class="team-tabs">
+          <button class="team-tab active" data-team="blue">蓝方</button>
+          <button class="team-tab" data-team="red">红方</button>
+        </div>
+        <input type="text" id="hero-search" placeholder="搜索英雄...">
+        <div id="hero-list"></div>
+      </section>
+
+      <!-- 已放置英雄 -->
+      <section id="placed-heroes">
+        <h3>📍 已放置英雄</h3>
+        <div id="placed-list"></div>
+      </section>
+
+      <!-- 战术工具 -->
+      <section id="tools-section">
+        <h3>🔧 战术工具</h3>
+        <button id="btn-path" class="tool-btn">✏️ 路径绘制</button>
+        <button id="btn-suppress" class="tool-btn" title="连线模式：点击英雄A再点击英雄B建立连线">🔗 压制连线</button>
+        <button id="btn-calibrate" class="tool-btn">📐 坐标校准</button>
+        <button id="btn-erase" class="tool-btn">🗑️ 清除标记</button>
+        <button id="btn-save" class="tool-btn">📋 保存战术</button>
+        <button id="btn-load" class="tool-btn">📂 加载战术</button>
+        <input type="file" id="load-file" accept=".json" style="display:none">
+      </section>
+    </aside>
+
+    <!-- 中间地图 -->
+    <main id="map-area">
+      <div id="map-controls">
+        <button id="btn-zoom-in" title="放大">🔍+</button>
+        <button id="btn-zoom-out" title="缩小">🔍−</button>
+        <button id="btn-zoom-reset" title="重置视图">↺</button>
+        <span id="zoom-level">100%</span>
+      </div>
+      <canvas id="map-canvas"></canvas>
+      <div id="map-hint">🖱️ 左键拖拽平移 · 滚轮缩放 · 左键拖动英雄</div>
+    </main>
+
+    <!-- 右侧面板 -->
+    <aside id="right-panel">
+      <!-- 游戏时间 -->
+      <section id="time-section">
+        <h3>⏱️ 游戏时间</h3>
+        <div id="time-display">00:00</div>
+      </section>
+
+      <!-- 主宰/暴君 -->
+      <section id="dragon-section">
+        <h3>🐉 主宰/暴君</h3>
+        <div id="dragon-info"></div>
+      </section>
+
+      <!-- 防御塔 -->
+      <section id="tower-section">
+        <h3>🗼 防御塔</h3>
+        <div id="tower-info"></div>
+      </section>
+
+      <!-- 野怪 -->
+      <section id="jungle-section">
+        <h3>🍃 野怪刷新</h3>
+        <div id="jungle-info"></div>
+      </section>
+
+      <!-- 特殊点位 -->
+      <section id="special-section">
+        <h3>🎯 特殊点位</h3>
+        <div id="special-info"></div>
+      </section>
+
+      <!-- 图例 -->
+      <section id="legend-section">
+        <h3>📋 图例</h3>
+        <div id="legend"></div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- 移动端：信息面板浮动切换按钮 -->
+  <button id="btn-toggle-info" title="信息面板">📊</button>
+  <div id="mobile-info-indicator">游戏信息</div>
+
+  <!-- 底部时间轴 -->
+  <footer id="timeline-bar">
+    <div class="timeline-controls">
+      <button id="btn-play" title="开始/暂停">▶</button>
+      <button id="btn-step-back" title="后退30秒">⏪</button>
+      <button id="btn-step-fwd" title="前进30秒">⏩</button>
+      <button id="btn-reset-time" title="归零">⏮</button>
+    </div>
+
+    <div class="timeline-slider-container">
+      <div class="timeline-markers" id="timeline-markers"></div>
+      <input type="range" id="timeline-slider" min="0" max="1200" value="0" step="1">
+      <div class="timeline-labels" id="timeline-labels"></div>
+    </div>
+
+    <div class="timeline-settings">
+      <label class="mode-label">
+        <input type="radio" name="timeMode" value="realtime" checked> ⏱️ 实时
+      </label>
+      <label class="mode-label">
+        <input type="radio" name="timeMode" value="manual"> 🎚️ 手动
+      </label>
+      <select id="speed-select">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+    </div>
+  </footer>
+
+  <script src="js/gameData.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/markers.js"></script>
+  <script src="js/heroPanel.js"></script>
+  <script src="js/infoPanel.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/paths.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/calibrate.js"></script>
+  <script src="js/skills.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
