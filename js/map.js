@@ -37,7 +37,8 @@ const MapEngine = {
   init() {
     this.canvas = document.getElementById('map-canvas');
     this.ctx = this.canvas.getContext('2d');
-    this.resize();
+    // Defer resize: mobile browsers need layout to settle first
+    requestAnimationFrame(() => { this.resize(); });
     this.loadMapImage();
     this.bindEvents();
 
@@ -75,7 +76,10 @@ const MapEngine = {
       this.mapW = this.mapImage.width;
       this.mapH = this.mapImage.height;
       console.log('Map loaded: ' + this.mapW + 'x' + this.mapH);
+      // Ensure canvas has valid size on mobile before fitting
+      if (this.view.canvasW <= 0 || this.view.canvasH <= 0) this.resize();
       this.fitMapToView();
+      this.invalidateBg();
     };
     this.mapImage.onerror = () => {
       console.log('Map not found, using procedural');
@@ -83,7 +87,7 @@ const MapEngine = {
       this.mapW = 1000; this.mapH = 1000;
       this.fitMapToView();
     };
-    this.mapImage.src = 'assets/王者峡谷_顶视图（新）.png';
+    this.mapImage.src = 'assets/map.jpg';
   },
 
   fitMapToView() {
@@ -91,7 +95,8 @@ const MapEngine = {
       this.view.canvasW / this.mapW,
       this.view.canvasH / this.mapH
     ) * 0.88;
-    this.view.zoom = Math.max(this.view.minZoom, Math.min(this.view.maxZoom, fitZoom));
+    // Allow fitting zoom below minZoom (minZoom is for user zooming, not initial fit)
+    this.view.zoom = Math.max(0.04, Math.min(this.view.maxZoom, fitZoom));
     this.view.x = (this.mapW * this.view.zoom - this.view.canvasW) / 2;
     this.view.y = (this.mapH * this.view.zoom - this.view.canvasH) / 2;
   },
@@ -179,6 +184,7 @@ const MapEngine = {
 
       if (el && !window.MarkerEngine?.findMarkerAt(mapPos.x, mapPos.y, 12)) {
         if (gs) {
+          window.UndoManager?.push();
           switch (el.type) {
             case 'camp':
               if (gs.isCampAlive(el.id)) gs.killedCamps[el.id] = { time: gs.time, team: gs.currentTeam };
@@ -277,206 +283,8 @@ const MapEngine = {
       }
     });
 
-    // ===== TOUCH EVENTS (mobile) =====
-    this._touchId = null;       // current tracking touch identifier
-    this._touchStartX = 0;
-    this._touchStartY = 0;
-    this._touchStartTime = 0;
-    this._touchMoved = false;
-    this._longPressTimer = null;
-    this.LONG_PRESS_MS = 600;
-
-    // Pinch state
-    this._pinchDist0 = 0;
-    this._pinchZoom0 = 1;
-    this._pinchMidX = 0;
-    this._pinchMidY = 0;
-
-    canvas.addEventListener('touchstart', (e) => {
-      if (window.Calibrate?.active) return;
-
-      if (e.touches.length === 1) {
-        // Single finger
-        e.preventDefault();
-        const t = e.touches[0];
-        const rect = canvas.getBoundingClientRect();
-        this._touchId = t.identifier;
-        this._touchStartX = t.clientX;
-        this._touchStartY = t.clientY;
-        this._touchStartTime = Date.now();
-        this._touchMoved = false;
-        this.mouseX = t.clientX - rect.left;
-        this.mouseY = t.clientY - rect.top;
-
-        // Long-press timer for right-click simulation
-        clearTimeout(this._longPressTimer);
-        const mapPos = this.screenToMap(this.mouseX, this.mouseY);
-        const threshold = 16 / this.view.zoom;
-        const el = window.findElementAt && window.findElementAt(mapPos.x, mapPos.y, threshold);
-        const hitMarker = window.MarkerEngine?.findMarkerAt(mapPos.x, mapPos.y, 14);
-
-        this._longPressTimer = setTimeout(() => {
-          if (!this._touchMoved) {
-            // Long press on marker → context menu
-            if (hitMarker && window.MarkerEngine) {
-              window.MarkerEngine.showHeroContextMenu(hitMarker, t.clientX, t.clientY);
-            }
-            // Long press on map element → toggle (tower/camp/dragon)
-            else if (el) {
-              this._triggerElementToggle(el);
-            }
-            if (navigator.vibrate) navigator.vibrate(15);
-          }
-        }, this.LONG_PRESS_MS);
-      }
-      else if (e.touches.length === 2) {
-        // Two fingers → cancel single-finger logic, init pinch
-        clearTimeout(this._pendingPan);
-        clearTimeout(this._longPressTimer);
-        this.isPanning = false;
-        const t0 = e.touches[0], t1 = e.touches[1];
-        this._pinchDist0 = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-        this._pinchZoom0 = this.view.zoom;
-        this._pinchMidX = (t0.clientX + t1.clientX) / 2;
-        this._pinchMidY = (t0.clientY + t1.clientY) / 2;
-      }
-    }, { passive: false });
-
-    canvas.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (e.touches.length === 2) {
-        // Pinch zoom
-        const t0 = e.touches[0], t1 = e.touches[1];
-        const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-        const scale = dist / this._pinchDist0;
-        const newZoom = Math.max(this.view.minZoom, Math.min(this.view.maxZoom, this._pinchZoom0 * scale));
-        const rect = canvas.getBoundingClientRect();
-        const mx = this._pinchMidX - rect.left;
-        const my = this._pinchMidY - rect.top;
-        const wx = (mx + this.view.x) / this.view.zoom;
-        const wy = (my + this.view.y) / this.view.zoom;
-        this.view.zoom = newZoom;
-        this.view.x = wx * newZoom - mx;
-        this.view.y = wy * newZoom - my;
-        document.getElementById('zoom-level').textContent = Math.round(this.view.zoom * 100) + '%';
-        return;
-      }
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
-      if (t.identifier !== this._touchId) return;
-      const dx = t.clientX - this._touchStartX;
-      const dy = t.clientY - this._touchStartY;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        this._touchMoved = true;
-        clearTimeout(this._longPressTimer);
-        clearTimeout(this._pendingPan);
-      }
-      const rect = canvas.getBoundingClientRect();
-      this.mouseX = t.clientX - rect.left;
-      this.mouseY = t.clientY - rect.top;
-
-      if (this.isPanning) {
-        this.view.x = this.viewAtPanStart.x - (t.clientX - this.panStart.x);
-        this.view.y = this.viewAtPanStart.y - (t.clientY - this.panStart.y);
-        return;
-      }
-      if (this._touchMoved) {
-        this.isPanning = true;
-        this.panStart = { x: this._touchStartX, y: this._touchStartY };
-        this.viewAtPanStart = { x: this.view.x, y: this.view.y };
-      }
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', (e) => {
-      clearTimeout(this._longPressTimer);
-      clearTimeout(this._pendingPan);
-
-      // Check if tracked touch ended
-      let trackedEnded = true;
-      for (let i = 0; i < e.touches.length; i++) {
-        if (e.touches[i].identifier === this._touchId) { trackedEnded = false; break; }
-      }
-      if (!trackedEnded && e.touches.length > 0) return;
-
-      if (!this._touchMoved) {
-        // Tap: simulate left-click on element
-        const mapPos = this.screenToMap(this.mouseX, this.mouseY);
-        const threshold = 16 / this.view.zoom;
-        const el = window.findElementAt && window.findElementAt(mapPos.x, mapPos.y, threshold);
-        const gs = window.GameState;
-
-        // Tap on map element
-        if (el && !window.MarkerEngine?.findMarkerAt(mapPos.x, mapPos.y, 14)) {
-          this._triggerElementToggle(el);
-          // Don't return — also update info panel
-        }
-        // Tap on empty → clear selection
-        else if (!el) {
-          if (gs) { gs.selectedElement = null; gs.hoveredElement = null; }
-        }
-        if (window.InfoPanel) window.InfoPanel.update(gs?.time || 0);
-      }
-
-      this.isPanning = false;
-      this._touchId = null;
-    });
-
-    // Prevent double-tap zoom on canvas
-    canvas.addEventListener('dblclick', (e) => {
-      // Only allow on desktop (touch devices won't fire this)
-    });
-
     // resize
     window.addEventListener('resize', () => { this.resize(); });
-  },
-
-  // Helper: toggle map element (used by both mouse click and touch tap/long-press)
-  _triggerElementToggle(el) {
-    const gs = window.GameState;
-    if (!gs) return;
-    switch (el.type) {
-      case 'camp':
-        if (gs.isCampAlive(el.id)) gs.killedCamps[el.id] = { time: gs.time, team: gs.currentTeam };
-        else delete gs.killedCamps[el.id];
-        break;
-      case 'dragon':
-        if (gs.isDragonAlive(el.id)) gs.killedDragons[el.id] = { time: gs.time, team: gs.currentTeam };
-        else delete gs.killedDragons[el.id];
-        break;
-      case 'tower':
-        const idx = gs.destroyedTowers.findIndex(
-          t => t.team === el.data.team && t.lane === el.data.lane && t.tier === el.data.tier
-        );
-        if (idx >= 0) gs.destroyedTowers.splice(idx, 1);
-        else gs.destroyedTowers.push({ team: el.data.team, lane: el.data.lane, tier: el.data.tier });
-        break;
-      case 'special':
-        if (el.data.type === 'red_falcon') {
-          gs.killedRedFalcon = gs.killedRedFalcon ? null : { time: gs.time, team: gs.currentTeam };
-        } else if (el.data.type === 'teleport') {
-          if (!gs.killedSpaceSpirit || (gs.time - gs.killedSpaceSpirit.time) >= 60) {
-            gs.killedSpaceSpirit = { time: gs.time, team: gs.currentTeam };
-          }
-        } else if (el.data.type === 'hp_pack') {
-          const entry = gs.killedHpPacks[el.id];
-          const t1Alive = !gs.destroyedTowers.some(
-            t => t.team === el.data.team && t.lane === el.data.lane && t.tier === 1
-          );
-          if (!t1Alive) break;
-          if (!entry || (gs.time - entry.time) >= 75) {
-            gs.killedHpPacks[el.id] = { time: gs.time, team: gs.currentTeam };
-          }
-        }
-        break;
-      case 'bush':
-        const cur = gs.bushControl[el.id];
-        if (!cur) gs.bushControl[el.id] = gs.currentTeam;
-        else if (cur === gs.currentTeam) delete gs.bushControl[el.id];
-        else gs.bushControl[el.id] = gs.currentTeam;
-        break;
-    }
-    gs.selectedElement = el;
-    if (window.InfoPanel) { window.InfoPanel.showElementDetail(el); window.InfoPanel.update(gs.time); }
   },
 
   // ===== render loop =====
@@ -488,6 +296,8 @@ const MapEngine = {
   invalidateBg() { this._bgDirty = true; },
 
   render() {
+    // Guard: skip if canvas has no size yet (mobile layout not settled)
+    if (this.view.canvasW <= 0 || this.view.canvasH <= 0) return;
     const ctx = this.ctx;
     const viewKey = this.view.zoom.toFixed(3) + '_' + Math.round(this.view.x) + '_' + Math.round(this.view.y);
     const viewChanged = this._lastView !== viewKey;
@@ -521,6 +331,7 @@ const MapEngine = {
     ctx.clearRect(0, 0, this.view.canvasW, this.view.canvasH);
     ctx.drawImage(this._bgCache, 0, 0);
     // dynamic layers on top
+    if (window.MinionEngine) window.MinionEngine.render();
     if (window.MarkerEngine) window.MarkerEngine.render();
     if (window.PathEngine) window.PathEngine.render();
     if (window.Calibrate) window.Calibrate.render();
@@ -542,7 +353,7 @@ const MapEngine = {
   drawProceduralMap(ctx) {
     const z = this.view.zoom, ox = -this.view.x, oy = -this.view.y;
     const mw = 1000 * z, mh = 1000 * z;
-    ctx.fillStyle = '#1a3a1a'; ctx.fillRect(ox, oy, mw, mh);
+    ctx.fillStyle = '#2d5a2d'; ctx.fillRect(ox, oy, mw, mh);
     // blue half
     ctx.fillStyle = 'rgba(30,80,180,0.15)';
     ctx.beginPath(); ctx.moveTo(ox, oy+mh); ctx.lineTo(ox+500*z, oy+300*z);
@@ -576,6 +387,7 @@ const MapEngine = {
   // ===== Layer 2: overlays =====
   drawOverlayLayer() {
     this.drawMinionPaths();
+    if (window.MinionEngine) window.MinionEngine.render();
     this.drawBushes();
     this.drawTowers();
     this.drawJungleCamps();
@@ -729,6 +541,19 @@ const MapEngine = {
       if (!alive) {
         const entry = gs.killedCamps[camp.id];
         const secTeam = entry ? entry.team : null;
+        // Not yet spawned (before 00:30): neutral gray, no kill attribution
+        if (!entry && gs.time < 30) {
+          ctx.fillStyle = 'rgba(80,80,80,0.4)'; ctx.beginPath();
+          ctx.arc(s.x, s.y, radius+2, 0, Math.PI*2); ctx.fill();
+          ctx.strokeStyle = 'rgba(120,120,120,0.5)';
+          ctx.lineWidth = 1; ctx.setLineDash([3,3]); ctx.beginPath();
+          ctx.arc(s.x, s.y, radius+3, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = '#999';
+          ctx.font = Math.round(9*Math.min(this.view.zoom,1.3)) + 'px "Microsoft YaHei"';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('未刷新', s.x, s.y);
+          continue;
+        }
         const secColor = secTeam === 'red' ? 'rgba(200,50,50,0.5)' : 'rgba(50,100,200,0.5)';
         ctx.fillStyle = secColor; ctx.beginPath();
         ctx.arc(s.x, s.y, radius+2, 0, Math.PI*2); ctx.fill();
@@ -788,6 +613,20 @@ const MapEngine = {
       if (!alive) {
         const entry = gs.killedDragons[pit.id];
         const secTeam = entry ? entry.team : null;
+        // Not yet spawned: neutral gray
+        const firstSpawn = pit.stages[0]?.startTime || 120;
+        if (!entry && gameTime < firstSpawn) {
+          ctx.fillStyle = 'rgba(80,80,80,0.4)'; ctx.beginPath();
+          ctx.arc(s.x, s.y, size+4, 0, Math.PI*2); ctx.fill();
+          ctx.strokeStyle = 'rgba(120,120,120,0.5)';
+          ctx.lineWidth = 1; ctx.setLineDash([3,3]); ctx.beginPath();
+          ctx.arc(s.x, s.y, size+5, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = '#999';
+          ctx.font = 'bold ' + Math.round(9*Math.min(this.view.zoom,1.2)) + 'px "Microsoft YaHei"';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('未刷新', s.x, s.y);
+          continue;
+        }
         const secColor = secTeam === 'red' ? 'rgba(200,50,50,0.5)' : 'rgba(50,100,200,0.5)';
         ctx.fillStyle = secColor; ctx.beginPath();
         ctx.arc(s.x, s.y, size+4, 0, Math.PI*2); ctx.fill();

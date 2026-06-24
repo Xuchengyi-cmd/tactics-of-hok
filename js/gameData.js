@@ -149,17 +149,30 @@ const BUSH_ZONES = [
   { id:'r_red_j3',    team:'red', x:499, y:192, w:38, h:28, name:'红方红区草3' },
 ];
 
-// ===== Minion paths =====
+// ===== Minion paths (calibrated through towers) =====
 const MINION_PATHS = [
   { id:'path_clash', lane:'clash', points:[
-    {x:30,y:140},{x:130,y:160},{x:250,y:200},{x:380,y:260},{x:480,y:320},{x:550,y:360},{x:650,y:440},{x:730,y:530},{x:800,y:650},{x:860,y:750}
+    {x:302,y:789},{x:299,y:692},{x:293,y:546},{x:291,y:343},
+    {x:316,y:216},{x:368,y:154},{x:413,y:124},{x:511,y:141},{x:609,y:139},{x:674,y:139}
   ]},
   { id:'path_mid', lane:'mid', points:[
-    {x:60,y:460},{x:150,y:450},{x:280,y:440},{x:400,y:445},{x:520,y:450},{x:650,y:460},{x:780,y:470},{x:880,y:480}
+    {x:335,y:790},{x:361,y:742},{x:418,y:660},{x:452,y:561},
+    {x:500,y:500},{x:546,y:429},{x:579,y:336},{x:637,y:251},{x:665,y:202}
   ]},
   { id:'path_farm', lane:'farm', points:[
-    {x:30,y:800},{x:130,y:780},{x:250,y:740},{x:380,y:680},{x:480,y:620},{x:550,y:570},{x:650,y:500},{x:730,y:410},{x:800,y:290},{x:860,y:190}
+    {x:340,y:843},{x:389,y:854},{x:489,y:851},{x:604,y:852},
+    {x:675,y:810},{x:702,y:683},{x:704,y:443},{x:701,y:299},{x:700,y:191}
   ]},
+];
+
+// Minion types for manual deployment
+const MINION_TYPES = [
+  { id:'melee', name:'小兵', icon:'⚔️', size:4, color:'#aab', desc:'基础近战兵' },
+  { id:'siege', name:'炮车', icon:'🚛', size:6, color:'#f90', appearTime:240, desc:'4分钟后替代一个近战兵' },
+  { id:'super', name:'超级兵', icon:'🛡️', size:7, color:'#f54', needHighGround:true, desc:'破高地后出现' },
+  { id:'overlord', name:'主宰先锋', icon:'🐉', size:8, color:'#c4f', needOverlord:true, waves:2, desc:'击杀10分钟前主宰，2波/路' },
+  { id:'overlord_enhanced', name:'大主宰先锋', icon:'🐲', size:9, color:'#f0f', needOverlord:true, appearTime:600, waves:1, singleLane:true, desc:'击杀10分钟后主宰，三路各3波普通先锋+选中路额外1只大主宰先锋(清除敌方该路兵线)' },
+  { id:'storm', name:'风暴龙王兵', icon:'🌪️', size:10, color:'#f0b', appearTime:1200, waves:3, desc:'击杀20分钟风暴龙王，3波/路' },
 ];
 
 // ===== Time events =====
@@ -375,6 +388,7 @@ window.SPECIAL_POINTS = SPECIAL_POINTS;
 window.BUSH_ZONES = BUSH_ZONES;
 window.MINION_PATHS = MINION_PATHS;
 window.TIME_EVENTS = TIME_EVENTS;
+window.MINION_TYPES = MINION_TYPES;
 window.HEROES = HEROES;
 window.ROLE_COLORS = ROLE_COLORS;
 window.ROLE_NAMES = ROLE_NAMES;

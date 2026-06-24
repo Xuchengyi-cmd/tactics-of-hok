@@ -2,6 +2,98 @@
  * main.js — entry point + global state + element interaction
  */
 
+// ===== Undo/Redo Manager =====
+window.UndoManager = {
+  undoStack: [],
+  redoStack: [],
+  maxSize: 50,
+  _skipNext: false,  // set to skip snapshot after undo/redo restore
+
+  snapshot() {
+    const gs = window.GameState;
+    return JSON.parse(JSON.stringify({
+      time: gs.time,
+      currentTeam: gs.currentTeam,
+      markers: window.MarkerEngine?.markers || [],
+      paths: window.PathEngine?.paths || [],
+      skills: window.SkillEngine?.skills || [],
+      minions: window.MinionEngine?.minions || [],
+      killedCamps: gs.killedCamps,
+      killedDragons: gs.killedDragons,
+      killedRedFalcon: gs.killedRedFalcon,
+      killedSpaceSpirit: gs.killedSpaceSpirit,
+      killedHpPacks: gs.killedHpPacks,
+      destroyedTowers: gs.destroyedTowers,
+      bushControl: gs.bushControl,
+      suppressionLinks: gs.suppressionLinks,
+      carryLinks: gs.carryLinks,
+      duelLinks: gs.duelLinks,
+    }));
+  },
+
+  restore(snap) {
+    const gs = window.GameState;
+    gs.time = snap.time;
+    gs.currentTeam = snap.currentTeam;
+    gs.killedCamps = snap.killedCamps;
+    gs.killedDragons = snap.killedDragons;
+    gs.killedRedFalcon = snap.killedRedFalcon;
+    gs.killedSpaceSpirit = snap.killedSpaceSpirit;
+    gs.killedHpPacks = snap.killedHpPacks;
+    gs.destroyedTowers = snap.destroyedTowers;
+    gs.bushControl = snap.bushControl;
+    gs.suppressionLinks = snap.suppressionLinks;
+    gs.carryLinks = snap.carryLinks;
+    gs.duelLinks = snap.duelLinks || [];
+    if (window.MarkerEngine) window.MarkerEngine.markers = snap.markers.map(m => ({...m}));
+    if (window.PathEngine) window.PathEngine.paths = snap.paths.map(p => ({...p, points: p.points.map(pt=>({...pt}))}));
+    if (window.SkillEngine) window.SkillEngine.skills = snap.skills.map(s => ({...s}));
+    if (window.MinionEngine) window.MinionEngine.minions = (snap.minions || []).map(m => ({...m}));
+    if (window.MarkerEngine) window.MarkerEngine.selectedMarker = null;
+    if (window.InfoPanel) { window.InfoPanel.update(gs.time); window.InfoPanel.updatePlacedList(); }
+    if (window.Timeline) window.Timeline.syncUI();
+  },
+
+  push() {
+    if (this._skipNext) { this._skipNext = false; return; }
+    this.undoStack.push(this.snapshot());
+    if (this.undoStack.length > this.maxSize) this.undoStack.shift();
+    this.redoStack = [];
+  },
+
+  undo() {
+    if (this.undoStack.length === 0) return;
+    this.redoStack.push(this.snapshot());
+    this._skipNext = true;
+    this.restore(this.undoStack.pop());
+    MapEngine.invalidateBg();
+    this._toast('↩ 已撤销 (' + this.undoStack.length + '步可撤)');
+  },
+
+  redo() {
+    if (this.redoStack.length === 0) return;
+    this.undoStack.push(this.snapshot());
+    this._skipNext = true;
+    this.restore(this.redoStack.pop());
+    MapEngine.invalidateBg();
+    this._toast('↪ 已恢复 (' + this.undoStack.length + '步可撤)');
+  },
+
+  _toast(msg) {
+    const el = document.getElementById('undo-toast');
+    if (el) { el.textContent = msg; el.style.opacity = '1'; clearTimeout(el._timer); }
+    else {
+      const d = document.createElement('div');
+      d.id = 'undo-toast';
+      d.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#ffd700;padding:6px 20px;border-radius:20px;font-size:12px;z-index:999;pointer-events:none;transition:opacity 0.3s;';
+      d.textContent = msg;
+      document.body.appendChild(d);
+    }
+    const toast = document.getElementById('undo-toast');
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
+  },
+};
+
 window.GameState = {
   time: 0,
   mode: 'realtime',
@@ -18,7 +110,8 @@ window.GameState = {
   hoveredElement: null,
   bushControl: {},
   suppressionLinks: [],  // [{ from: markerId, to: markerId }]
-  carryLinks: [],        // [{ carrierId: markerId, carriedId: markerId }]  shield mountain (盾山) carry
+  carryLinks: [],        // [{ carrierId: markerId, carriedId: markerId }]
+  duelLinks: [],         // [{ casterId: markerId, targetId: markerId }]  海月幻境
 
   isT2Destroyed: function(team, lane) {
     return this.destroyedTowers.some(t => t.team === team && t.lane === lane && t.tier === 2);
@@ -54,116 +147,26 @@ window.GameState = {
 function initApp() {
   console.log('Honor of Kings Tactics Board init...');
   MapEngine.init();
-  setupRightClick();
   MarkerEngine.init();
+  setupRightClick();
   HeroPanel.init();
   InfoPanel.init();
   Timeline.init();
   PathEngine.init();
+  MinionEngine.init();
   Storage.init();
   Calibrate.init();
   document.getElementById('btn-calibrate')?.addEventListener('click', () => Calibrate.toggle());
+  document.getElementById('btn-undo')?.addEventListener('click', () => window.UndoManager.undo());
+  document.getElementById('btn-redo')?.addEventListener('click', () => window.UndoManager.redo());
   SkillEngine.init();
-  console.log('  + skills');
+  AiEngine.init();
+  console.log('  + skills + ai');
   InfoPanel.update(0);
   InfoPanel.updatePlacedList();
   setupKeyboardShortcuts();
-  setupMobileUI();
-  setupDynamicHints();
   window.addEventListener('resize', () => MapEngine.resize());
   console.log('Ready.');
-}
-
-// ===== Mobile UI handlers =====
-function setupMobileUI() {
-  const isMobile = window.matchMedia('(max-width: 768px)').matches;
-
-  // Hamburger menu → toggle left drawer
-  const btnMenu = document.getElementById('btn-menu');
-  btnMenu?.addEventListener('click', () => {
-    const leftPanel = document.getElementById('left-panel');
-    const rightPanel = document.getElementById('right-panel');
-    leftPanel?.classList.toggle('open');
-    // Close right panel when opening left
-    if (leftPanel?.classList.contains('open')) {
-      rightPanel?.classList.remove('open');
-    }
-  });
-
-  // Drawer handle → also toggles left panel
-  const handle = document.getElementById('drawer-handle');
-  handle?.addEventListener('click', () => {
-    document.getElementById('left-panel')?.classList.toggle('open');
-  });
-
-  // Info panel toggle button
-  const btnInfo = document.getElementById('btn-toggle-info');
-  btnInfo?.addEventListener('click', () => {
-    const rightPanel = document.getElementById('right-panel');
-    const leftPanel = document.getElementById('left-panel');
-    rightPanel?.classList.toggle('open');
-    if (rightPanel?.classList.contains('open')) {
-      leftPanel?.classList.remove('open');
-    }
-  });
-
-  // Mobile indicator tap → open info panel
-  const indicator = document.getElementById('mobile-info-indicator');
-  indicator?.addEventListener('click', () => {
-    document.getElementById('right-panel')?.classList.add('open');
-    indicator.style.display = 'none';
-  });
-
-  // Suppress link button (mobile替代Shift+点击)
-  let suppressMode = false;
-  const btnSuppress = document.getElementById('btn-suppress');
-  btnSuppress?.addEventListener('click', () => {
-    suppressMode = !suppressMode;
-    btnSuppress.classList.toggle('active', suppressMode);
-    btnSuppress.textContent = suppressMode ? '🔗 连线中...' : '🔗 压制连线';
-    document.getElementById('map-hint').textContent = suppressMode
-      ? '🔗 点击英雄A → 再点英雄B 建立连线 | 再次点击按钮退出'
-      : isMobile ? '👆 单指滑动平移 · 双指缩放 · 长按切换状态' : '🖱️ 左键拖拽平移 · 滚轮缩放 · 左键拖动英雄';
-  });
-
-  // Intercept marker selection for suppress mode
-  const origBindCanvas = MarkerEngine.bindCanvasEvents;
-  // We hook via a flag on MarkerEngine that mousedown handler checks
-  const origMousedown = MapEngine.canvas.onmousedown;
-  // Use a global flag
-  window._suppressMode = function() { return suppressMode; };
-
-  // When suppress mode is active, tap on hero A selects it, tap hero B creates link
-  // This is handled by modifying the mousedown logic in markers.js
-  // We set a global helper
-  window._handleSuppressTap = function(markerHit) {
-    if (!suppressMode) return false;
-    const gs = window.GameState;
-    const sel = MarkerEngine.selectedMarker;
-    if (sel && sel.id !== markerHit.id) {
-      const existing = gs.suppressionLinks.findIndex(
-        l => l.from === sel.id && l.to === markerHit.id
-      );
-      if (existing >= 0) {
-        gs.suppressionLinks.splice(existing, 1);
-      } else {
-        gs.suppressionLinks.push({ from: sel.id, to: markerHit.id });
-      }
-      MarkerEngine.selectedMarker = null;
-    } else {
-      MarkerEngine.selectedMarker = markerHit;
-    }
-    return true;
-  };
-}
-
-// ===== Dynamic hints based on device =====
-function setupDynamicHints() {
-  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  const hint = document.getElementById('map-hint');
-  if (isMobile && hint) {
-    hint.textContent = '👆 单指滑动平移 · 双指缩放 · 长按切换状态';
-  }
 }
 
 function setupKeyboardShortcuts() {
@@ -174,6 +177,10 @@ function setupKeyboardShortcuts() {
     if (e.code === 'KeyP' && e.target === document.body) { document.getElementById('btn-path').click(); }
     if (e.code === 'KeyR' && e.ctrlKey && e.target === document.body) { e.preventDefault(); document.getElementById('btn-reset-time').click(); }
     if (e.code === 'KeyS' && e.ctrlKey && e.target === document.body) { e.preventDefault(); Storage.saveTactics(); }
+    if (e.code === 'KeyZ' && e.ctrlKey && !e.shiftKey && e.target === document.body) { e.preventDefault(); window.UndoManager.undo(); }
+    if ((e.code === 'KeyY' && e.ctrlKey) || (e.code === 'KeyZ' && e.ctrlKey && e.shiftKey)) {
+      if (e.target === document.body) { e.preventDefault(); window.UndoManager.redo(); }
+    }
   });
 }
 
@@ -192,6 +199,7 @@ function setupRightClick() {
     if (!el) return;
     const gs = window.GameState;
 
+    window.UndoManager.push();
     if (el.type === 'tower') {
       const idx = gs.destroyedTowers.findIndex(
         t => t.team === el.data.team && t.lane === el.data.lane && t.tier === el.data.tier

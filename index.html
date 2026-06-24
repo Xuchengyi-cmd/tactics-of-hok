@@ -10,7 +10,6 @@
   <!-- 顶部标题栏 -->
   <header id="header">
     <h1>👑 王者荣耀战术板</h1>
-    <button id="btn-menu" title="菜单">☰</button>
     <div id="header-info">
       <span id="game-time-display">⏱ 00:00</span>
       <span id="game-phase-display">—</span>
@@ -21,8 +20,6 @@
   <div id="main-container">
     <!-- 左侧面板 -->
     <aside id="left-panel">
-      <!-- 抽屉拖拽手柄（移动端） -->
-      <div id="drawer-handle"></div>
       <!-- 英雄面板 -->
       <section id="hero-section">
         <h3>🎮 英雄选择</h3>
@@ -44,8 +41,9 @@
       <section id="tools-section">
         <h3>🔧 战术工具</h3>
         <button id="btn-path" class="tool-btn">✏️ 路径绘制</button>
-        <button id="btn-suppress" class="tool-btn" title="连线模式：点击英雄A再点击英雄B建立连线">🔗 压制连线</button>
         <button id="btn-calibrate" class="tool-btn">📐 坐标校准</button>
+        <button id="btn-undo" class="tool-btn" title="Ctrl+Z">↩️ 撤销</button>
+        <button id="btn-redo" class="tool-btn" title="Ctrl+Y">↪️ 恢复</button>
         <button id="btn-erase" class="tool-btn">🗑️ 清除标记</button>
         <button id="btn-save" class="tool-btn">📋 保存战术</button>
         <button id="btn-load" class="tool-btn">📂 加载战术</button>
@@ -105,10 +103,6 @@
     </aside>
   </div>
 
-  <!-- 移动端：信息面板浮动切换按钮 -->
-  <button id="btn-toggle-info" title="信息面板">📊</button>
-  <div id="mobile-info-indicator">游戏信息</div>
-
   <!-- 底部时间轴 -->
   <footer id="timeline-bar">
     <div class="timeline-controls">
@@ -142,6 +136,7 @@
 
   <script src="js/gameData.js"></script>
   <script src="js/map.js"></script>
+  <script src="js/minion.js"></script>
   <script src="js/markers.js"></script>
   <script src="js/heroPanel.js"></script>
   <script src="js/infoPanel.js"></script>
@@ -150,6 +145,7 @@
   <script src="js/storage.js"></script>
   <script src="js/calibrate.js"></script>
   <script src="js/skills.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

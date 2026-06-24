@@ -8,7 +8,6 @@ const HeroPanel = {
   filterText: '',
   filterLane: '',
   draggedHero: null,
-  selectedHero: null,  // mobile tap-to-place: { heroData, team }
 
   init() {
     this.createLaneFilter();
@@ -20,16 +19,14 @@ const HeroPanel = {
     const searchEl = document.getElementById('hero-search');
     const div = document.createElement('div');
     div.id = 'lane-filter';
-    div.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;';
     const lanes = ['全部','打野','中路','边路','发育路','辅助'];
     lanes.forEach(l => {
       const btn = document.createElement('button');
       btn.className = 'lane-filter-btn' + (l === '全部' ? ' active' : '');
       btn.textContent = l;
-      btn.style.cssText = 'padding:2px 6px;font-size:10px;border:1px solid #2a3350;background:'+(l==='全部'?'#3b82f6':'#1e2740')+';color:#ccc;border-radius:3px;cursor:pointer;';
       btn.addEventListener('click', () => {
-        div.querySelectorAll('button').forEach(b => { b.style.background='#1e2740'; b.classList.remove('active'); });
-        btn.style.background = '#3b82f6'; btn.classList.add('active');
+        div.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
         this.filterLane = l === '全部' ? '' : l;
         this.renderHeroList();
       });
@@ -115,7 +112,6 @@ const HeroPanel = {
           e.dataTransfer.setData('text/plain', heroId);
           e.dataTransfer.effectAllowed = 'copy';
           icon.classList.add('dragging');
-          this.selectHero(null); // clear tap selection
         }
       });
 
@@ -123,32 +119,7 @@ const HeroPanel = {
         icon.classList.remove('dragging');
         this.draggedHero = null;
       });
-
-      // Mobile + Desktop: click to select for tap-to-place
-      icon.addEventListener('click', (e) => {
-        const heroId = icon.dataset.heroId;
-        const hero = HEROES.find(h => h.id === heroId);
-        if (!hero) return;
-        // Toggle: clicking same hero deselects
-        if (this.selectedHero && this.selectedHero.id === heroId) {
-          this.selectHero(null);
-        } else {
-          this.selectHero({ ...hero, team: this.currentTeam });
-        }
-      });
     });
-  },
-
-  // Highlight/unhighlight the selected hero icon
-  selectHero(heroData) {
-    this.selectedHero = heroData;
-    // Update visual
-    document.querySelectorAll('#hero-list .hero-icon').forEach(el => {
-      el.classList.toggle('selected', heroData && el.dataset.heroId === heroData.id);
-    });
-    document.getElementById('map-hint').textContent = heroData
-      ? '👆 点击地图放置 ' + heroData.name + ' | 再次点击英雄取消'
-      : '🖱️ 左键拖拽平移 · 滚轮缩放 · 左键拖动英雄';
   },
 
   // ===== 通过点击放置英雄 =====
@@ -180,24 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
       window.MarkerEngine.addMarker(window.HeroPanel.draggedHero, mapPos.x, mapPos.y);
       window.HeroPanel.draggedHero = null;
     }
-  });
-
-  // Mobile tap-to-place: click canvas with selected hero
-  canvas?.addEventListener('click', (e) => {
-    const hp = window.HeroPanel;
-    if (!hp?.selectedHero) return;
-    // Skip if it was a drag (moved mouse >5px) or interacting with map element
-    if (window.MarkerEngine?.isDragging) return;
-    if (window.Calibrate?.active || window.PathEngine?.drawing || window.SkillEngine?.active) return;
-    const rect = canvas.getBoundingClientRect();
-    const mapPos = window.MapEngine.screenToMap(e.clientX - rect.left, e.clientY - rect.top);
-    // Don't place on existing map element
-    const threshold = 14 / window.MapEngine.view.zoom;
-    const el = window.findElementAt && window.findElementAt(mapPos.x, mapPos.y, threshold);
-    const hitMarker = window.MarkerEngine?.findMarkerAt(mapPos.x, mapPos.y, 14);
-    if (el || hitMarker) return;
-    window.MarkerEngine.addMarker(hp.selectedHero, mapPos.x, mapPos.y);
-    hp.selectHero(null); // Deselect after placing
   });
 });
 

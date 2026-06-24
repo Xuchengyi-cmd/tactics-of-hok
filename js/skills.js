@@ -12,7 +12,18 @@ const SkillEngine = {
   currentPreview: null,
   skills: [],
   editing: null,
-  editStartMap: null,    // map coords of edit start
+  editStartMap: null,
+  _colorIdx: 0,
+  _presetColors: ['#e94560','#f59e0b','#22c55e','#3b82f6','#8b5cf6','#06b6d4','#ffffff'],
+
+  _advanceColor() {
+    this._colorIdx = (this._colorIdx + 1) % this._presetColors.length;
+    const next = this._presetColors[this._colorIdx];
+    const clrInput = document.getElementById('skill-color');
+    if (clrInput) clrInput.value = next;
+    const swatches = document.querySelectorAll('#skill-options span[data-color]');
+    swatches.forEach(s => { s.style.borderColor = s.dataset.color === next ? '#fff' : 'transparent'; });
+  },
   editSkillSnap: null,
 
   init() { this.createPanel(); this.bindEvents(); },
@@ -41,26 +52,58 @@ const SkillEngine = {
     });
     sel.appendChild(r1);
 
-    // row2: label + color + width
+    // row2: label + width
     const r2 = document.createElement('div');
-    r2.style.cssText = 'display:flex;gap:3px;margin-bottom:4px;align-items:center;';
+    r2.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;align-items:center;';
     const inp = document.createElement('input');
     inp.id = 'skill-label'; inp.placeholder = '技能名称';
-    inp.style.cssText = 'flex:1;padding:3px 6px;font-size:10px;background:#1e2740;border:1px solid #2a3350;color:#ccc;border-radius:3px;';
+    inp.style.cssText = 'flex:1;padding:4px 6px;font-size:11px;background:#1e2740;border:1px solid #2a3350;color:#ccc;border-radius:3px;';
     r2.appendChild(inp);
-    const clr = document.createElement('input');
-    clr.id = 'skill-color'; clr.type = 'color'; clr.value = '#e94560';
-    clr.style.cssText = 'width:24px;height:24px;border:none;cursor:pointer;background:transparent;';
-    r2.appendChild(clr);
     const wlbl = document.createElement('label');
-    wlbl.style.cssText = 'font-size:10px;color:#8892a8;white-space:nowrap;';
-    wlbl.textContent = '宽 ';
+    wlbl.style.cssText = 'font-size:10px;color:#8892a8;white-space:nowrap;display:flex;align-items:center;gap:2px;';
+    wlbl.textContent = '宽';
     const w = document.createElement('input');
     w.id = 'skill-width'; w.type = 'range'; w.min = '3'; w.max = '200'; w.value = '25';
-    w.style.cssText = 'width:50px;vertical-align:middle;';
+    w.style.cssText = 'width:44px;vertical-align:middle;';
     wlbl.appendChild(w);
     r2.appendChild(wlbl);
     sel.appendChild(r2);
+
+    // row2.5: preset color swatches + custom
+    const rColor = document.createElement('div');
+    rColor.style.cssText = 'display:flex;gap:3px;margin-bottom:6px;align-items:center;flex-wrap:wrap;';
+    const colorLabel = document.createElement('span');
+    colorLabel.textContent = '颜色';
+    colorLabel.style.cssText = 'font-size:10px;color:#8892a8;margin-right:2px;';
+    rColor.appendChild(colorLabel);
+
+    const presetColors = [
+      '#e94560','#f59e0b','#22c55e','#3b82f6','#8b5cf6','#06b6d4','#ffffff',
+    ];
+    let activeColor = presetColors[0];
+    presetColors.forEach((c, i) => {
+      const sw = document.createElement('span');
+      sw.style.cssText = `width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${i===0?'#fff':'transparent'};flex-shrink:0;transition:0.15s;`;
+      sw.title = c;
+      sw.dataset.color = c;
+      sw.addEventListener('click', () => {
+        rColor.querySelectorAll('span[data-color]').forEach(s => s.style.borderColor = 'transparent');
+        sw.style.borderColor = '#fff';
+        activeColor = c;
+        document.getElementById('skill-color').value = c;
+      });
+      rColor.appendChild(sw);
+    });
+    // custom color input (small)
+    const clr = document.createElement('input');
+    clr.id = 'skill-color'; clr.type = 'color'; clr.value = presetColors[0];
+    clr.style.cssText = 'width:22px;height:22px;border:none;cursor:pointer;background:transparent;flex-shrink:0;';
+    clr.addEventListener('input', () => {
+      activeColor = clr.value;
+      rColor.querySelectorAll('span[data-color]').forEach(s => s.style.borderColor = 'transparent');
+    });
+    rColor.appendChild(clr);
+    sel.appendChild(rColor);
 
     // row3: follow checkbox
     const r3 = document.createElement('div');
@@ -120,33 +163,6 @@ const SkillEngine = {
       }
     }, true);
 
-    // Touch equivalents
-    MapEngine.canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const mapPos = MapEngine.screenToMap(MapEngine.mouseX, MapEngine.mouseY);
-
-      if (this.active) {
-        this.placing = true;
-        this.placeStart = { x: mapPos.x, y: mapPos.y };
-        this.currentPreview = null;
-        e.stopPropagation();
-        return;
-      }
-
-      if (window.MarkerEngine?.findMarkerAt(mapPos.x, mapPos.y, 14)) return;
-      const hit = this.findSkillAt(mapPos.x, mapPos.y);
-      if (hit) {
-        this.editing = hit.skill;
-        this.editStartMap = { x: mapPos.x, y: mapPos.y };
-        this.editSkillSnap = { startX: hit.skill.startX, startY: hit.skill.startY, endX: hit.skill.endX, endY: hit.skill.endY };
-        e.stopPropagation();
-      }
-    }, true);
-
-    MapEngine.canvas.addEventListener('touchend', () => {
-      if (this.editing) { this.editing = null; this.editStartMap = null; this.editSkillSnap = null; }
-    });
-
     window.addEventListener('mousemove', () => {
       // mouse tracking handled by MapEngine.mouseX/mouseY
       if (this.active && this.placing) {
@@ -165,20 +181,25 @@ const SkillEngine = {
           if (dist > 5) {
             const lineWidth = parseInt(document.getElementById('skill-width')?.value) || 25;
             const follow = document.getElementById('skill-follow')?.checked;
-            // if follow-hero mode, find hero at start point
             let followHeroId = null;
             if (follow && window.MarkerEngine) {
-              const hero = window.MarkerEngine.findMarkerAt(
-                this.currentPreview.startX, this.currentPreview.startY, 15
-              );
-              if (hero) followHeroId = hero.id;
+              // Find closest hero to click point (within 40 units)
+              let best = null, bestD = 40;
+              for (const m of window.MarkerEngine.markers) {
+                const d = Math.hypot(m.x - this.currentPreview.startX, m.y - this.currentPreview.startY);
+                if (d < bestD) { best = m; bestD = d; }
+              }
+              if (best) followHeroId = best.id;
             }
+            // auto-cycle to next preset color for next skill
+            this._advanceColor();
             // 矩形跟随英雄时记录半宽半高，保证英雄始终在矩形中心
             let halfW = 0, halfH = 0;
             if (this.skillType === 'rect' && followHeroId) {
               halfW = Math.abs(this.currentPreview.endX - this.currentPreview.startX) / 2;
               halfH = Math.abs(this.currentPreview.endY - this.currentPreview.startY) / 2;
             }
+            window.UndoManager?.push();
             this.skills.push({
               id:'sk_'+Date.now(), type:this.skillType, label, color, lineWidth,
               followHeroId, halfW, halfH,
@@ -200,6 +221,7 @@ const SkillEngine = {
       const hit = this.findSkillAt(mapPos.x, mapPos.y);
       if (hit) {
         e.preventDefault(); e.stopPropagation();
+        window.UndoManager?.push();
         this.skills = this.skills.filter(s => s.id !== hit.skill.id);
       }
     }, true);
@@ -280,7 +302,16 @@ const SkillEngine = {
     for (const sk of this.skills) {
       // if follows a hero, snap to hero position
       if (sk.followHeroId && window.MarkerEngine) {
-        const hero = window.MarkerEngine.markers.find(m => m.id === sk.followHeroId);
+        let hero = window.MarkerEngine.markers.find(m => m.id === sk.followHeroId);
+        // Fallback: if ID not found (e.g. after save/load), find by position
+        if (!hero) {
+          let best = null, bestD = 50;
+          for (const m of window.MarkerEngine.markers) {
+            const d = Math.hypot(m.x - sk.startX, m.y - sk.startY);
+            if (d < bestD) { best = m; bestD = d; }
+          }
+          if (best) { hero = best; sk.followHeroId = best.id; }
+        }
         if (hero) {
           if (sk.type === 'rect' && sk.halfW) {
             // 矩形：英雄在中心，根据半宽半高重新计算两个角点
@@ -370,7 +401,7 @@ const SkillEngine = {
     ctx.restore();
   },
 
-  clearAll() { this.skills = []; },
+  clearAll() { window.UndoManager?.push(); this.skills = []; },
 };
 
 window.SkillEngine = SkillEngine;

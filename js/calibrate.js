@@ -59,11 +59,27 @@ const Calibrate = {
         x: b.x + b.w/2, y: b.y + b.h/2, color: '#228b22',
         refKey: 'bush', refId: b.id, width: b.w, height: b.h,
       })),
+      // 兵线路径点
+      ...MINION_PATHS.flatMap(path =>
+        path.points.map((pt, i) => ({
+          id: path.id + '_pt' + i,
+          name: (path.lane === 'clash' ? '对抗路' : path.lane === 'mid' ? '中路' : '发育路') + '兵线点' + (i + 1),
+          type: 'minion_path',
+          icon: '⚔️',
+          x: pt.x, y: pt.y,
+          color: path.lane === 'clash' ? '#f99' : path.lane === 'mid' ? '#ff9' : '#9cf',
+          refKey: 'minion_path',
+          refId: path.id + '_pt' + i,
+          pathId: path.id,
+          pointIdx: i,
+        }))
+      ),
     ];
 
     // 按类型分组
     const specialCount = SPECIAL_POINTS.length;
     const bushCount = BUSH_ZONES.length;
+    const pathCount = MINION_PATHS.reduce((s, p) => s + p.points.length, 0);
     const categories = [
       { label: '🗼 防御塔 (18座)', filter: d => d.type === 'tower' },
       { label: '💎🔴 BUFF (4个)', filter: d => d.type === 'jungle' },
@@ -71,6 +87,7 @@ const Calibrate = {
       { label: '🐉🐲 龙坑 (3个)', filter: d => d.type === 'dragon' },
       { label: '🎯 特殊点位 (' + specialCount + '个)', filter: d => d.type === 'special' },
       { label: '🌿 草丛 (' + bushCount + '个)', filter: d => d.type === 'bush' },
+      { label: '⚔️ 兵线路径 (' + pathCount + '个)', filter: d => d.type === 'minion_path' },
     ];
 
     this.categories = categories.map(c => ({
@@ -241,12 +258,16 @@ const Calibrate = {
   },
 
   saveCurrentPositions() {
-    // 将当前标记位置保存回 elementDefs
     for (const marker of this.markers) {
       const def = this.elementDefs.find(d => d.id === marker.id);
-      if (def) {
-        def.x = marker.x;
-        def.y = marker.y;
+      if (def) { def.x = marker.x; def.y = marker.y; }
+      // Update MINION_PATHS data live
+      if (marker.refKey === 'minion_path' && marker.pathId && marker.pointIdx !== undefined) {
+        const path = MINION_PATHS.find(p => p.id === marker.pathId);
+        if (path && path.points[marker.pointIdx]) {
+          path.points[marker.pointIdx].x = Math.round(marker.x);
+          path.points[marker.pointIdx].y = Math.round(marker.y);
+        }
       }
     }
   },
@@ -302,40 +323,6 @@ const Calibrate = {
         this.draggedMarker = null;
         MapEngine.canvas.style.cursor = 'crosshair';
       }
-    });
-
-    // ===== Touch equivalents =====
-    canvas.addEventListener('touchstart', (e) => {
-      if (!this.active || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      const rect = canvas.getBoundingClientRect();
-      const mapPos = MapEngine.screenToMap(t.clientX - rect.left, t.clientY - rect.top);
-      const hit = this.findMarkerAt(mapPos.x, mapPos.y);
-      if (hit) {
-        this.selectedMarkerId = hit.id;
-        this.highlightPulse = 0;
-        this.updatePanel();
-        this.draggedMarker = hit;
-        this.dragOffset = { x: hit.x - mapPos.x, y: hit.y - mapPos.y };
-        e.stopPropagation();
-        e.preventDefault();
-      }
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      if (!this.active || !this.draggedMarker) return;
-      e.preventDefault();
-      const t = e.touches[0];
-      const rect = canvas.getBoundingClientRect();
-      const mapPos = MapEngine.screenToMap(t.clientX - rect.left, t.clientY - rect.top);
-      this.draggedMarker.x = mapPos.x + this.dragOffset.x;
-      this.draggedMarker.y = mapPos.y + this.dragOffset.y;
-      this.draggedMarker.adjusted = true;
-      this.updatePanel();
-    });
-
-    canvas.addEventListener('touchend', () => {
-      if (this.draggedMarker) { this.draggedMarker = null; }
     });
 
     // ESC 退出校准模式
@@ -446,7 +433,7 @@ const Calibrate = {
     this.saveCurrentPositions();
 
     const result = {
-      towers: {}, jungles: {}, dragons: {}, specials: {}, bushes: {},
+      towers: {}, jungles: {}, dragons: {}, specials: {}, bushes: {}, minion_paths: {},
     };
 
     for (const def of this.elementDefs) {
@@ -455,6 +442,7 @@ const Calibrate = {
       else if (def.type === 'jungle' || def.type === 'jungle_small') result.jungles[def.refId] = coord;
       else if (def.type === 'dragon') result.dragons[def.refId] = coord;
       else if (def.type === 'bush') result.bushes[def.refId] = coord;
+      else if (def.type === 'minion_path') result.minion_paths[def.refId] = coord;
       else result.specials[def.refId] = coord;
     }
 
@@ -501,6 +489,7 @@ const Calibrate = {
     if (data.dragons) Object.assign(flat, data.dragons);
     if (data.specials) Object.assign(flat, data.specials);
     if (data.bushes) Object.assign(flat, data.bushes);
+    if (data.minion_paths) Object.assign(flat, data.minion_paths);
 
     for (const def of this.elementDefs) {
       if (flat[def.refId]) {
@@ -520,6 +509,7 @@ const Calibrate = {
       else if (def.type === 'jungle' || def.type === 'jungle_small') result.jungles[def.refId] = coord;
       else if (def.type === 'dragon') result.dragons[def.refId] = coord;
       else if (def.type === 'bush') result.bushes[def.refId] = coord;
+      else if (def.type === 'minion_path') result.minion_paths[def.refId] = coord;
       else result.specials[def.refId] = coord;
     }
     return result;

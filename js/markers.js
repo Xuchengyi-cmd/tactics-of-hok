@@ -3,7 +3,10 @@
  * 在地图上放置、移动、删除英雄标记
  */
 
-const CARRY_HEROES = ['h_dunshan', 'h_yao_sup', 'h_shaosiyuan']; // 盾山、瑶、少司缘
+const CARRY_HEROES = ['h_dunshan', 'h_yao_sup', 'h_shaosiyuan'];
+const CLONE_HEROES = ['h_kongkonger', 'h_yuange', 'h_aguduo'];
+const DUEL_HEROES = ['h_haiyue'];
+const DISGUISE_HEROES = ['h_yuange']; // 空空儿、元歌、阿古朵
 
 const MarkerEngine = {
   markers: [],        // HeroMarker[]
@@ -20,6 +23,7 @@ const MarkerEngine = {
 
   // ===== 标记操作 =====
   addMarker(heroData, mapX, mapY) {
+    window.UndoManager?.push();
     const marker = {
       id: 'marker_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       heroId: heroData.id,
@@ -38,12 +42,14 @@ const MarkerEngine = {
   },
 
   removeMarker(id) {
+    window.UndoManager?.push();
     this.markers = this.markers.filter(m => m.id !== id);
     if (this.selectedMarker?.id === id) this.selectedMarker = null;
     if (window.InfoPanel) window.InfoPanel.updatePlacedList();
   },
 
   clearAllMarkers() {
+    window.UndoManager?.push();
     this.markers = [];
     this.selectedMarker = null;
     if (window.InfoPanel) window.InfoPanel.updatePlacedList();
@@ -82,12 +88,9 @@ const MarkerEngine = {
 
       const hit = this.findMarkerAt(mapPos.x, mapPos.y);
       if (hit) {
-        // Mobile suppress mode (button toggle)
-        if (window._handleSuppressTap && window._handleSuppressTap(hit)) {
-          return;
-        }
         // Shift+click = suppress link
         if (e.shiftKey && this.selectedMarker && this.selectedMarker.id !== hit.id) {
+          window.UndoManager?.push();
           const gs = window.GameState;
           const existing = gs.suppressionLinks.findIndex(
             l => l.from === this.selectedMarker.id && l.to === hit.id
@@ -99,11 +102,12 @@ const MarkerEngine = {
           }
           return;
         }
+        const prevSelected = this.selectedMarker;
         this.selectedMarker = hit;
         this.isDragging = true;
         this.dragTarget = hit;
         this.dragOffset = { x: hit.x - mapPos.x, y: hit.y - mapPos.y };
-        if (window.InfoPanel) window.InfoPanel.showMarkerDetail(hit);
+        if (window.InfoPanel) window.InfoPanel.showMarkerDetail(hit, prevSelected);
       } else {
         // Shift+click empty = clear selection
         if (!e.shiftKey) {
@@ -159,71 +163,8 @@ const MarkerEngine = {
       if (this.isDragging) {
         this.isDragging = false;
         this.dragTarget = null;
+        window.UndoManager?.push();
         MapEngine.canvas.style.cursor = this.hoveredMarker ? 'grab' : 'grab';
-      }
-    });
-
-    // ===== Touch events (mobile marker drag) =====
-    canvas.addEventListener('touchstart', (e) => {
-      if (window.Calibrate?.active) return;
-      if (window.PathEngine?.drawing) return;
-      if (window.SkillEngine?.active) return;
-      if (MapEngine.isPanning) return;
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
-      const rect = canvas.getBoundingClientRect();
-      const mapPos = MapEngine.screenToMap(t.clientX - rect.left, t.clientY - rect.top);
-      const hit = this.findMarkerAt(mapPos.x, mapPos.y);
-      if (hit) {
-        this.selectedMarker = hit;
-        this.isDragging = true;
-        this.dragTarget = hit;
-        this.dragOffset = { x: hit.x - mapPos.x, y: hit.y - mapPos.y };
-        // Prevent map pan while dragging marker
-        MapEngine._touchMoved = true;
-        clearTimeout(MapEngine._longPressTimer);
-        if (window.InfoPanel) window.InfoPanel.showMarkerDetail(hit);
-      }
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
-      const rect = canvas.getBoundingClientRect();
-      const mapPos = MapEngine.screenToMap(t.clientX - rect.left, t.clientY - rect.top);
-
-      // Path drawing via touch
-      if (window.PathEngine?.drawing) {
-        window.PathEngine.handleMouseMove(mapPos.x, mapPos.y);
-        return;
-      }
-
-      // Marker dragging via touch
-      if (!this.isDragging || !this.dragTarget) return;
-      e.preventDefault();
-      const dx = (mapPos.x + this.dragOffset.x) - this.dragTarget.x;
-      const dy = (mapPos.y + this.dragOffset.y) - this.dragTarget.y;
-      this.dragTarget.x = mapPos.x + this.dragOffset.x;
-      this.dragTarget.y = mapPos.y + this.dragOffset.y;
-      // Carry linkage
-      const gs = window.GameState;
-      if (gs?.carryLinks) {
-        for (const link of gs.carryLinks) {
-          if (link.carrierId === this.dragTarget.id) {
-            const carried = this.markers.find(m => m.id === link.carriedId);
-            if (carried) { carried.x += dx; carried.y += dy; }
-          } else if (link.carriedId === this.dragTarget.id) {
-            const carrier = this.markers.find(m => m.id === link.carrierId);
-            if (carrier) { carrier.x += dx; carrier.y += dy; }
-          }
-        }
-      }
-    });
-
-    canvas.addEventListener('touchend', (e) => {
-      if (this.isDragging) {
-        this.isDragging = false;
-        this.dragTarget = null;
       }
     });
 
@@ -236,12 +177,12 @@ const MarkerEngine = {
       const hit = this.findMarkerAt(mapPos.x, mapPos.y);
       if (hit) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         this.showHeroContextMenu(hit, e.clientX, e.clientY);
       } else {
         this.hideHeroContextMenu();
       }
-    });
+    }, true); // capture phase: fire before other handlers
 
     // 双击编辑
     canvas.addEventListener('dblclick', (e) => {
@@ -269,7 +210,6 @@ const MarkerEngine = {
 
     const sel = this.selectedMarker;
     const gs = window.GameState;
-    const canCarry = CARRY_HEROES.includes(marker.heroId);
 
     // 检查托举关系
     let isCarrying = false, isCarried = false;
@@ -280,18 +220,13 @@ const MarkerEngine = {
 
     const menu = document.createElement('div');
     menu.id = 'hero-context-menu';
-    menu.style.cssText = `
-      position:fixed; left:${clientX}px; top:${clientY}px;
-      background:#1e2740; border:1px solid #3b82f6; border-radius:6px;
-      padding:4px 0; z-index:9999; min-width:160px;
-      box-shadow:0 4px 16px rgba(0,0,0,0.5); font-size:13px;
-    `;
+    menu.style.left = clientX + 'px';
+    menu.style.top = clientY + 'px';
 
     const items = [];
 
-    // "托举" — 仅当已选中可托举英雄（盾山/瑶/少司缘）且右键目标不是自己
+    // "托举" — 仅当已选中可托举英雄且右键目标不是自己
     if (sel && CARRY_HEROES.includes(sel.heroId) && sel.id !== marker.id && !isCarried && !isCarrying) {
-      // 检查是否已在托举中
       const selCarrying = gs?.carryLinks?.some(l => l.carrierId === sel.id);
       if (!selCarrying) {
         items.push({ action:'carry', text:'🛡️ 托举该队友', cls:'carry' });
@@ -303,6 +238,25 @@ const MarkerEngine = {
       items.push({ action:'uncarry', text:'🔓 断开托举', cls:'uncarry' });
     }
 
+    // "创建分身" — 空空儿/元歌/阿古朵
+    if (CLONE_HEROES.includes(marker.heroId) && !marker.isClone && !marker.cloneOf) {
+      const cloneCount = this.markers.filter(m => m.cloneOf === marker.id).length;
+      if (cloneCount < 3) {
+        items.push({ action:'clone', text:'👥 创建分身', cls:'' });
+      }
+    }
+    // "删除所有分身"
+    const hasClones = this.markers.some(m => m.cloneOf === marker.id);
+    if (hasClones) {
+      items.push({ action:'deleteClones', text:'👥 删除所有分身', cls:'danger' });
+    }
+
+    // 大招强化自身 (铠/姬小满/苍等)
+    if (!marker.isClone) {
+      const label = marker.ultActive ? '🔆 关闭大招强化' : '🔆 开启大招强化';
+      items.push({ action:'ult', text: label, cls: marker.ultActive ? '' : 'carry' });
+    }
+
     // 通用操作
     items.push({ action:'edit', text:'✏️ 编辑等级/经济', cls:'' });
     items.push({ action:'delete', text:'🗑️ 删除该英雄', cls:'danger' });
@@ -310,12 +264,9 @@ const MarkerEngine = {
     for (const item of items) {
       const div = document.createElement('div');
       div.className = 'ctx-item';
+      if (item.cls === 'danger') div.style.color = 'var(--accent-red)';
+      if (item.cls === 'carry') div.style.color = 'var(--accent-gold)';
       div.textContent = item.text;
-      div.style.cssText = `
-        padding:6px 14px; cursor:pointer; color:#ccc;
-        ${item.cls === 'danger' ? 'color:#e94560;' : ''}
-        ${item.cls === 'carry' ? 'color:#ffd700;' : ''}
-      `;
       div.addEventListener('mouseenter', () => { div.style.background = '#2a3350'; });
       div.addEventListener('mouseleave', () => { div.style.background = ''; });
       div.addEventListener('click', (ev) => {
@@ -342,18 +293,61 @@ const MarkerEngine = {
       case 'uncarry':
         this.removeCarryLink(marker.id);
         break;
+      case 'clone':
+        this.addClone(marker);
+        break;
+      case 'deleteClones':
+        this.removeAllClones(marker.id);
+        break;
+      case 'ult':
+        window.UndoManager?.push();
+        marker.ultActive = !marker.ultActive;
+        break;
       case 'edit':
         this.showEditDialog(marker);
         break;
       case 'delete':
-        this.removeCarryLink(marker.id); // 先断开托举
+        this.removeCarryLink(marker.id);
+        this.removeAllClones(marker.id);
+        this.markers = this.markers.filter(m => m.disguiseOf !== marker.id);
         this.removeMarker(marker.id);
         break;
     }
   },
 
+  // ===== 分身管理 =====
+  addClone(original) {
+    window.UndoManager?.push();
+    const offset = 15 + Math.random() * 20;
+    const angle = Math.random() * Math.PI * 2;
+    const marker = {
+      id: 'clone_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      heroId: original.heroId,
+      name: original.name + '(分身)',
+      icon: original.icon,
+      role: original.role,
+      x: original.x + Math.cos(angle) * offset,
+      y: original.y + Math.sin(angle) * offset,
+      level: original.level,
+      gold: 0,
+      team: original.team,
+      isClone: true,
+      cloneOf: original.id,
+    };
+    this.markers.push(marker);
+    if (window.InfoPanel) window.InfoPanel.updatePlacedList();
+    return marker;
+  },
+
+  removeAllClones(originalId) {
+    window.UndoManager?.push();
+    this.markers = this.markers.filter(m => m.cloneOf !== originalId);
+    if (window.InfoPanel) window.InfoPanel.updatePlacedList();
+  },
+
   // ===== 托举关系管理 =====
   addCarryLink(carrierId, carriedId) {
+    window.UndoManager?.push();
     const gs = window.GameState;
     if (!gs.carryLinks) gs.carryLinks = [];
     // 防止重复
@@ -363,11 +357,113 @@ const MarkerEngine = {
   },
 
   removeCarryLink(markerId) {
+    window.UndoManager?.push();
     const gs = window.GameState;
     if (!gs.carryLinks) return;
     gs.carryLinks = gs.carryLinks.filter(
       l => l.carrierId !== markerId && l.carriedId !== markerId
     );
+  },
+
+  addDisguise(yuangeId, targetId) {
+    window.UndoManager?.push();
+    const origin = this.markers.find(m => m.id === yuangeId);
+    const target = this.markers.find(m => m.id === targetId);
+    if (!origin || !target) return;
+    // Remove existing disguises
+    this.markers = this.markers.filter(m => m.disguiseOf !== yuangeId);
+    // Create disguised marker (looks like target, but is 元歌)
+    const marker = {
+      id: 'disguise_' + Date.now(),
+      heroId: target.heroId,
+      name: target.name + '(元歌伪装)',
+      icon: target.icon,
+      role: target.role,
+      x: origin.x + 25, y: origin.y,
+      level: origin.level,
+      gold: 0,
+      team: origin.team,
+      disguiseOf: yuangeId,
+    };
+    this.markers.push(marker);
+    if (window.InfoPanel) window.InfoPanel.updatePlacedList();
+    return marker;
+  },
+
+  addDuelLink(casterId, targetId) {
+    window.UndoManager?.push();
+    const gs = window.GameState;
+    if (!gs.duelLinks) gs.duelLinks = [];
+    if (gs.duelLinks.some(l => l.casterId === casterId || l.targetId === casterId)) return;
+    if (gs.duelLinks.some(l => l.casterId === targetId || l.targetId === targetId)) return;
+    gs.duelLinks.push({ casterId, targetId });
+  },
+
+  removeDuelLink(markerId) {
+    window.UndoManager?.push();
+    const gs = window.GameState;
+    if (!gs.duelLinks) return;
+    gs.duelLinks = gs.duelLinks.filter(
+      l => l.casterId !== markerId && l.targetId !== markerId
+    );
+  },
+
+  // ===== 幻境对决渲染 =====
+  drawDuelLinks(ctx) {
+    const gs = window.GameState;
+    if (!gs?.duelLinks?.length) return;
+
+    for (const link of gs.duelLinks) {
+      const caster = this.markers.find(m => m.id === link.casterId);
+      const target = this.markers.find(m => m.id === link.targetId);
+      if (!caster || !target) continue;
+
+      const s1 = MapEngine.mapToScreen(caster.x, caster.y);
+      const s2 = MapEngine.mapToScreen(target.x, target.y);
+      const z = Math.min(MapEngine.view.zoom, 2.0);
+      const t = Date.now() / 1000;
+
+      // Purple connecting beam
+      ctx.strokeStyle = 'rgba(192,132,252,0.6)';
+      ctx.lineWidth = 3 * z;
+      ctx.shadowColor = '#c084fc';
+      ctx.shadowBlur = 10 * z;
+      ctx.beginPath();
+      ctx.moveTo(s1.x, s1.y);
+      ctx.lineTo(s2.x, s2.y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Pulsing rings around both heroes
+      for (const m of [caster, target]) {
+        const s = MapEngine.mapToScreen(m.x, m.y);
+        const pulse = Math.sin(t * 3 + (m === caster ? 0 : Math.PI)) * 0.3 + 0.7;
+        ctx.strokeStyle = 'rgba(192,132,252,' + (0.5 + pulse * 0.3) + ')';
+        ctx.lineWidth = 2.5 * z;
+        ctx.setLineDash([6 * z, 3 * z]);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 20 * z * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Flowing particles along beam
+      const dotCount = 4;
+      for (let i = 0; i < dotCount; i++) {
+        const frac = ((t * 0.4 + i / dotCount) % 1);
+        const dx = s1.x + (s2.x - s1.x) * frac;
+        const dy = s1.y + (s2.y - s1.y) * frac;
+        ctx.fillStyle = 'rgba(192,132,252,0.8)';
+        ctx.beginPath(); ctx.arc(dx, dy, 3 * z, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Label at midpoint
+      const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2 - 14 * z;
+      ctx.fillStyle = '#c084fc';
+      ctx.font = 'bold ' + Math.round(10 * z) + 'px "Microsoft YaHei"';
+      ctx.textAlign = 'center';
+      ctx.fillText('幻境', mx, my);
+    }
   },
 
   // ===== 托举平台渲染 =====
@@ -506,6 +602,32 @@ const MarkerEngine = {
       }
     }
 
+    // draw clone connections (分身连线)
+    for (const marker of this.markers) {
+      if (!marker.cloneOf) continue;
+      const original = this.markers.find(m => m.id === marker.cloneOf);
+      if (!original) continue;
+      const s1 = MapEngine.mapToScreen(original.x, original.y);
+      const s2 = MapEngine.mapToScreen(marker.x, marker.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(s1.x, s1.y);
+      ctx.lineTo(s2.x, s2.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // small diamond at midpoint
+      const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // draw duel links (海月幻境)
+    this.drawDuelLinks(ctx);
+
     // draw carry platforms (盾山托举) — behind markers
     this.drawCarryPlatforms(ctx);
 
@@ -538,7 +660,96 @@ const MarkerEngine = {
   drawMarker(ctx, marker) {
     const s = MapEngine.mapToScreen(marker.x, marker.y);
     const z = MapEngine.view.zoom;
-    const radius = 14 * Math.min(z, 2);
+    const isClone = marker.isClone;
+    const radius = (isClone ? 10 : 14) * Math.min(z, 2);
+
+    // In duel (海月幻境): render semi-transparent
+    const gs = window.GameState;
+    const inDuel = gs?.duelLinks?.some(l => l.casterId === marker.id || l.targetId === marker.id);
+    if (inDuel) ctx.globalAlpha = 0.3;
+
+    // Disguised marker (元歌伪装): dashed purple border + purple connect line to 元歌
+    if (marker.disguiseOf) {
+      const yuange = this.markers.find(m => m.id === marker.disguiseOf);
+      if (yuange) {
+        const sy = MapEngine.mapToScreen(yuange.x, yuange.y);
+        ctx.strokeStyle = 'rgba(167,139,250,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(sy.x, sy.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Purple dashed border on disguised marker
+      ctx.strokeStyle = 'rgba(167,139,250,0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, radius + 8 * z, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Ult active: pulsing golden aura
+    if (marker.ultActive && !isClone) {
+      const pulse = Math.sin(Date.now() / 400) * 0.3 + 0.7;
+      const auraR = radius + 12 * z * pulse;
+      // Outer glow
+      ctx.fillStyle = 'rgba(255,215,0,' + (0.15 * pulse) + ')';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, auraR + 6 * z, 0, Math.PI * 2);
+      ctx.fill();
+      // Inner ring
+      ctx.strokeStyle = 'rgba(255,215,0,' + (0.7 * pulse) + ')';
+      ctx.lineWidth = 2.5 * z;
+      ctx.setLineDash([4 * z, 2 * z]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, auraR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Label
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold ' + Math.round(9 * z) + 'px "Microsoft YaHei"';
+      ctx.textAlign = 'center';
+      ctx.fillText('🔆强化', s.x, s.y - radius - 14 * z);
+    }
+
+    // Clone: semi-transparent, dashed border
+    if (isClone) {
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.arc(s.x + 1, s.y + 2, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      const teamColor = marker.team === 'red' ? '#ef4444' : '#3b82f6';
+      ctx.fillStyle = teamColor;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold ' + Math.round(11 * Math.min(z, 2)) + 'px "Microsoft YaHei"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(marker.icon, s.x, s.y);
+
+      // "分身" label
+      if (z > 0.5) {
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = Math.round(8 * z) + 'px "Microsoft YaHei"';
+        ctx.fillText('分身', s.x, s.y + radius + 10 * z);
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
 
     // 阴影
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -612,6 +823,8 @@ const MarkerEngine = {
       ctx.fillStyle = '#fff';
       ctx.fillText(marker.name, s.x, s.y + radius + nameFontSize + 2);
     }
+
+    if (inDuel) ctx.globalAlpha = 1;
   },
 
   drawMarkerHighlight(ctx, marker, color) {
@@ -630,3 +843,7 @@ const MarkerEngine = {
 };
 
 window.MarkerEngine = MarkerEngine;
+window.CARRY_HEROES = CARRY_HEROES;
+window.CLONE_HEROES = CLONE_HEROES;
+window.DUEL_HEROES = DUEL_HEROES;
+window.DISGUISE_HEROES = DISGUISE_HEROES;

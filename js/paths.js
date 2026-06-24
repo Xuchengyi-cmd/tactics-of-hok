@@ -43,13 +43,6 @@ const PathEngine = {
       e.preventDefault();
     }, true); // capture phase to beat map.js handler
 
-    // Touch: tap to save segment during drawing
-    MapEngine.canvas.addEventListener('touchstart', (e) => {
-      if (!this.drawing) return;
-      if (this.currentPath && this.currentPath.points.length > 1) {
-        this.saveSegment();
-      }
-    }, true);
   },
 
   startDrawing() {
@@ -102,12 +95,13 @@ const PathEngine = {
     if (label === null) { this.currentPath = null; this.startNewSegment(); return; }
     if (label.trim() === '') { this.currentPath = null; this.startNewSegment(); return; }
     this.currentPath.label = label;
+    window.UndoManager?.push();
     this.paths.push(this.currentPath);
     this.startNewSegment();
   },
 
-  clearAllPaths() { this.paths = []; this.currentPath = null; },
-  deletePath(id) { this.paths = this.paths.filter(p => p.id !== id); },
+  clearAllPaths() { window.UndoManager?.push(); this.paths = []; this.currentPath = null; },
+  deletePath(id) { window.UndoManager?.push(); this.paths = this.paths.filter(p => p.id !== id); },
 
   // ===== render =====
   render() {

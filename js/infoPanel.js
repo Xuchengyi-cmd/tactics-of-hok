@@ -249,23 +249,66 @@ const InfoPanel = {
     });
   },
 
-  showMarkerDetail(marker) {
-    // 将信息显示在已放置列表上方
+  showMarkerDetail(marker, prevSelected) {
     const container = document.getElementById('placed-list');
     const existing = container.querySelector('.marker-detail');
     if (existing) existing.remove();
 
+    const gs = window.GameState;
+    const prev = prevSelected; // the hero that was selected BEFORE clicking this one
+    const isClone = marker.isClone;
+    const cloneOf = marker.cloneOf;
+
+    // Check capabilities
+    const canClone = !isClone && !cloneOf && window.CLONE_HEROES && window.CLONE_HEROES.includes(marker.heroId);
+    const cloneCount = window.MarkerEngine?.markers?.filter(m => m.cloneOf === marker.id).length || 0;
+    // Carry: the PREVIOUSLY selected hero must be a carry-capable hero, and this one is the target
+    const canCarry = prev && prev.id !== marker.id && !isClone && window.CARRY_HEROES && window.CARRY_HEROES.includes(prev.heroId);
+    const isCarrying = gs?.carryLinks?.some(l => l.carrierId === marker.id);
+    const isCarried = gs?.carryLinks?.some(l => l.carriedId === marker.id);
+    const isDuelLinks = gs?.duelLinks?.some(l => l.casterId === marker.id || l.targetId === marker.id);
+
+    let btns = '';
+    // Carry
+    if (canCarry && !isCarried && !gs?.carryLinks?.some(l => l.carrierId === prev.id)) {
+      btns += `<button class=\"mk-btn carry\" onclick=\"window.MarkerEngine.addCarryLink('${prev.id}','${marker.id}')\">托举</button>`;
+    }
+    if (isCarrying || isCarried) {
+      btns += `<button class=\"mk-btn danger\" onclick=\"window.MarkerEngine.removeCarryLink('${marker.id}')\">断开托举</button>`;
+    }
+    // 元歌秘术变：伪装成敌方英雄
+    const canDisguise = prev && prev.id !== marker.id && !isClone && prev.team !== marker.team && window.DISGUISE_HEROES && window.DISGUISE_HEROES.includes(prev.heroId);
+    if (canDisguise) {
+      btns += `<button class=\"mk-btn\" style=\"color:#a78bfa;border-color:rgba(167,139,250,0.3);\" onclick=\"window.MarkerEngine.addDisguise('${prev.id}','${marker.id}')\">秘术变</button>`;
+    }
+
+    // 海月幻境
+    const canDuel = prev && prev.id !== marker.id && !isClone && window.DUEL_HEROES && window.DUEL_HEROES.includes(prev.heroId);
+    if (canDuel && !isDuelLinks && !gs?.duelLinks?.some(l => l.casterId === prev.id)) {
+      btns += `<button class=\"mk-btn\" style=\"color:#c084fc;border-color:rgba(192,132,252,0.3);\" onclick=\"window.MarkerEngine.addDuelLink('${prev.id}','${marker.id}')\">拉入幻境</button>`;
+    }
+    if (isDuelLinks) {
+      btns += `<button class=\"mk-btn danger\" onclick=\"window.MarkerEngine.removeDuelLink('${marker.id}')\">解除幻境</button>`;
+    }
+    if (canClone && cloneCount < 3) {
+      btns += `<button class=\"mk-btn\" onclick=\"window.MarkerEngine.addClone(window.MarkerEngine.markers.find(m=>m.id==='${marker.id}'))\">创建分身</button>`;
+    }
+    if (cloneCount > 0) {
+      btns += `<button class=\"mk-btn danger\" onclick=\"window.MarkerEngine.removeAllClones('${marker.id}')\">删除分身(${cloneCount})</button>`;
+    }
+    if (!isClone) {
+      btns += `<button class=\"mk-btn ${marker.ultActive?'active':''}\" onclick=\"window.UndoManager.push();var m=window.MarkerEngine.markers.find(x=>x.id==='${marker.id}');if(m)m.ultActive=!m.ultActive;window.InfoPanel.showMarkerDetail(m);\">${marker.ultActive?'关闭强化':'大招强化'}</button>`;
+    }
+    btns += `<button class=\"mk-btn\" onclick=\"window.MarkerEngine.showEditDialog(window.MarkerEngine.markers.find(m=>m.id==='${marker.id}'))\">编辑</button>`;
+    btns += `<button class=\"mk-btn danger\" onclick=\"window.MarkerEngine.removeCarryLink('${marker.id}');window.MarkerEngine.removeAllClones('${marker.id}');window.MarkerEngine.markers=window.MarkerEngine.markers.filter(m=>m.disguiseOf!=='${marker.id}');window.MarkerEngine.removeMarker('${marker.id}')\">删除</button>`;
+
     const detail = document.createElement('div');
     detail.className = 'marker-detail';
-    detail.style.cssText = 'background:#1e2740;padding:8px;border-radius:4px;margin-bottom:4px;font-size:11px;';
+    detail.style.cssText = 'background:var(--bg-elevated);padding:8px;border-radius:6px;margin-bottom:4px;font-size:11px;border:1px solid var(--border-subtle);';
     detail.innerHTML = `
-      <div style="font-weight:bold;margin-bottom:4px;">${marker.icon} ${marker.name}</div>
-      <div>等级: Lv.${marker.level} | 经济: 💰${marker.gold}</div>
-      <div>阵营: ${marker.team === 'red' ? '🔴红方' : '💎蓝方'}</div>
-      <button style="margin-top:4px;padding:2px 8px;font-size:10px;background:#e94560;border:none;color:#fff;border-radius:3px;cursor:pointer;"
-              onclick="window.MarkerEngine.removeMarker('${marker.id}')">删除</button>
-      <button style="margin-top:4px;margin-left:4px;padding:2px 8px;font-size:10px;background:#3b82f6;border:none;color:#fff;border-radius:3px;cursor:pointer;"
-              onclick="window.MarkerEngine.showEditDialog(window.MarkerEngine.markers.find(m=>m.id==='${marker.id}'))">编辑</button>
+      <div style="font-weight:bold;margin-bottom:4px;">${marker.icon} ${marker.name}${isClone?' <span style=color:#aaa>(分身)</span>':''}</div>
+      <div style="color:var(--text-secondary);">Lv.${marker.level} | ${marker.team==='red'?'红':'蓝'}方${marker.gold>0?' | 💰'+marker.gold:''}</div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;">${btns}</div>
     `;
     container.insertBefore(detail, container.firstChild);
   },

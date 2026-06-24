@@ -113,6 +113,7 @@ const Storage = {
       gameTime: window.GameState?.time || 0,
       currentTeam: window.GameState?.currentTeam || 'blue',
       markers: (window.MarkerEngine?.markers || []).map(m => ({
+        id: m.id,
         heroId: m.heroId,
         name: m.name,
         icon: m.icon,
@@ -122,6 +123,10 @@ const Storage = {
         level: m.level,
         gold: m.gold,
         team: m.team,
+        ultActive: m.ultActive,
+        isClone: m.isClone,
+        cloneOf: m.cloneOf,
+        disguiseOf: m.disguiseOf,
       })),
       paths: (window.PathEngine?.paths || []).map(p => ({
         points: p.points,
@@ -134,8 +139,10 @@ const Storage = {
       killedDragons: window.GameState?.killedDragons || {},
       bushControl: window.GameState?.bushControl || {},
       skills: window.SkillEngine?.skills || [],
+      minions: window.MinionEngine?.minions || [],
       suppressionLinks: window.GameState?.suppressionLinks || [],
       carryLinks: window.GameState?.carryLinks || [],
+      duelLinks: window.GameState?.duelLinks || [],
       killedRedFalcon: window.GameState?.killedRedFalcon || null,
       killedSpaceSpirit: window.GameState?.killedSpaceSpirit || null,
       killedHpPacks: window.GameState?.killedHpPacks || {},
@@ -155,20 +162,29 @@ const Storage = {
       window.GameState.killedDragons = data.killedDragons || {};
       window.GameState.bushControl = data.bushControl || {};
       if (window.SkillEngine && data.skills) window.SkillEngine.skills = data.skills;
+      if (window.MinionEngine && data.minions) window.MinionEngine.minions = data.minions.map(m => ({...m}));
       window.GameState.suppressionLinks = data.suppressionLinks || [];
       window.GameState.carryLinks = data.carryLinks || [];
+      window.GameState.duelLinks = data.duelLinks || [];
       window.GameState.killedRedFalcon = data.killedRedFalcon || null;
       window.GameState.killedSpaceSpirit = data.killedSpaceSpirit || null;
       window.GameState.killedHpPacks = data.killedHpPacks || {};
       window.GameState.destroyedTowers = data.destroyedTowers || [];
     }
 
-    // 恢复标记
+    // 恢复标记（保留原始ID）
     if (window.MarkerEngine) {
-      window.MarkerEngine.clearAllMarkers();
+      window.MarkerEngine.markers = [];
       if (data.markers) {
         for (const m of data.markers) {
-          window.MarkerEngine.addMarker(m, m.x, m.y);
+          window.MarkerEngine.markers.push({
+            id: m.id || ('marker_' + Date.now() + '_' + Math.random().toString(36).substr(2,5)),
+            heroId: m.heroId, name: m.name, icon: m.icon, role: m.role,
+            x: m.x, y: m.y, level: m.level || 1, gold: m.gold || 0,
+            team: m.team || 'blue',
+            ultActive: m.ultActive, isClone: m.isClone, cloneOf: m.cloneOf,
+            disguiseOf: m.disguiseOf,
+          });
         }
       }
     }
