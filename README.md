@@ -2,7 +2,7 @@
 
 基于 HTML5 Canvas 的 MOBA 战术可视化系统。在浏览器中打开即用，无需安装。
 
-**在线地址**: https://zippy-sunshine-7a919a.netlify.app/
+**在线地址**: https://zesty-gecko-10c808.netlify.app/
 
 ## 功能
 
