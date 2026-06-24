@@ -61,6 +61,9 @@
 
 ## 快速开始
 
+**在线使用**：https://zesty-gecko-10c808.netlify.app/
+
+**本地运行**：
 ```bash
 # 方式1：直接打开
 双击 index.html
@@ -68,9 +71,6 @@
 # 方式2：本地服务器
 python -m http.server 8080
 # 浏览器打开 http://localhost:8080
-
-# 方式3：部署到 Netlify
-# 将项目文件夹拖到 https://app.netlify.com/drop
 ```
 
 ## 项目结构
